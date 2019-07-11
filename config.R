@@ -5,7 +5,7 @@ base.dir <- ""
 desired.barcodes <- 96
 
 # max iterations to try and achieve required barcode number
-iter.number <- 100
+iter.number <- 10
 
 # desired length of barcodes
 barcode.length <- 6

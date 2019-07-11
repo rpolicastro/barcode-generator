@@ -40,8 +40,10 @@ barcodes <- truseq %>%
 	mutate("truseq"="Y") %>%
 	right_join(., barcodes, by="barcodes")
 
-remaining <- filter(barcodes, is.na(truseq))
-print(paste(nrow(remaining), "barcodes after removal of truseq barcodes"))
+remaining <- barcodes %>%
+	filter(is.na(truseq)) %>%
+	pull(barcodes)
+print(paste(length(remaining), "barcodes after removing truseq barcodes"))
 
 ## Filter Barcodes by GC Content
 ## ----------
@@ -50,8 +52,12 @@ print(paste(nrow(remaining), "barcodes after removal of truseq barcodes"))
 
 barcodes <- mutate(barcodes, "GC"= str_count(barcodes, pattern=c("G","C")) / barcode.length)
 
-remaining <- filter(barcodes, GC <= 0.75 & GC >= 0.25)
-print(paste(nrow(remaining), "barcodes after GC content filter"))
+discard <- barcodes %>%
+	filter(GC < 0.25 & GC > 0.75) %>%
+	pull(barcodes)
+
+remaining <- discard(remaining, remaining %in% discard)
+print(paste(length(remaining), "barcodes after removing barcodes with GC content <= 25% or GC content >= 75%"))
 
 ## Filter Identical Base Runs
 ## ----------
@@ -63,8 +69,12 @@ barcodes <- mutate(
 	single_base_runs = case_when(grepl(barcodes, pattern="(A{4,}|T{4,}|G{4,}|C{4,})") ~ "Y")
 )
 
-remaining <- filter(barcodes, is.na(single_base_runs))
-print(paste(nrow(remaining), "barcodes after 4+ sequential base filter"))
+discard <- barcodes %>%
+	filter(single_base_runs == "Y") %>%
+	pull(barcodes)
+
+remaining <- discard(remaining, remaining %in% discard)
+print(paste(length(remaining), "barcodes after removing barcodes with 4+ identical base runs")) 
 
 ## Remove Barcodes Similar to Truseq
 ## ----------
@@ -77,12 +87,27 @@ barcodes <- adist(pull(barcodes, barcodes), pull(truseq, barcodes)) %>%
 	rowSums %>%
 	map_chr(~ifelse(.==1, "Y", NA)) %>%
 	as_tibble %>%
-	rename("truseq_similarity"=1) %>%
+	dplyr::rename("truseq_similarity"=1) %>%
 	mutate("barcodes"=pull(barcodes, barcodes)) %>%
 	left_join(barcodes, ., by="barcodes")
 
-remaining <- filter(remaining, is.na(truseq_similarity))
-print(paste(length(remaining), "barcodes after removing barcodes with a dist <", n.dist, "from truseq barcodes"))
+discard <- barcodes %>%
+	filter(truseq_similarity == "Y") %>%
+	pull(barcodes)
+
+remaining <- discard(remaining, remaining %in% discard)
+print(paste(length(remaining), "barcodes after removing barcodes with a distance of", n.dist, "from truseq adapters"))
+
+## Keep Optimal Barcodes Thus Far
+## ----------
+
+remaining <- barcodes %>%
+	filter(
+		is.na(truseq),
+		GC >= 0.25 & GC <= 0.75,
+		is.na(single_base_runs),
+		is.na(truseq_similarity)
+	)
 
 ########################################
 ## Maximize Barcode Number and Distance
@@ -215,10 +240,10 @@ kept.barcodes <- keep
 
 print(paste(length(kept.barcodes), "after reducing the number of barcodes with more than", max.nmer, "position matching 3-mers"))
 
+## Reduce Position Matching Bases
+## ----------
 
-#####
-# remove barcodes if a base appears more than max.base.frac of the time in one position
-#####
+## remove barcodes if a base appears more than max.base.frac of the time in one position
 
 keep <- kept.barcodes
 
@@ -267,70 +292,73 @@ kept.barcodes <- keep
 
 print(paste(length(kept.barcodes), "barcodes after making sure a base doesn't appear more than", paste0(max.base.frac * 100, "%"), "in one position")) 
 
+## Add Back Truseq Barcodes
+## ----------
 
-#####
-# check if desired barcode number was found
-#####
+kept.barcodes <- c(pull(truseq, barcodes), kept.barcodes)
 
+## check if desired barcode number was found
+## ----------
 
-# what to do if there are enough barcodes
-if (length(barcodes) >= (desired.barcodes - 24)) {
-	# keep track of barcode lengths
-	bc.length[iter] <- length(barcodes) + 24
- 	# randomly sample desired.barcodes - 24 barcodes from barcodes list
- 	print(paste(length(barcodes) - (desired.barcodes - 24), "barcodes randomly removed to achieve desired barcode number of", desired.barcodes))
- 	barcodes <- sample(barcodes, desired.barcodes - 24)
- 	# add truseq barcodes to list
- 	barcodes <- c(truseq, barcodes)
- 	print(paste(length(barcodes), "barcodes after adding back the truseq barcodes"))
- 	# getting average distance between barcodes
- 	dist <- adist(barcodes)
- 	dist <- cbind(dist, 1:nrow(dist))
- 	mean.dist <- sum(apply(dist, 1, function(x) {sum(x[-x[length(x)]])})) / ((nrow(dist)**2) - nrow(dist))
- 	print(paste(mean.dist, "average distance between barcodes"))
-	# check to see if the barcodes should be saved 
- 	if (length(optimal.barcodes)==0) {
- 		optimal.barcodes <- barcodes
- 		optimal.dist <- mean.dist
-	} else if (mean.dist <= optimal.dist) {
- 		print(paste("the current average distance of", mean.dist, "is lower than or equal to the optimal barcode set with distance", optimal.dist))
- 	} else {
- 		optimal.barcodes <- barcodes
- 		optimal.dist <- mean.dist
- 		print(paste("the current average distance of", mean.dist, "is higher than the optimal barcode set with distance", optimal.dist))
- 	}
-# what to do if there are not enough barcodes
-} else {
-	bc.length[iter] <- length(barcodes) + 24
-	print(paste(length(barcodes) + 24, "barcodes after adding back the truseq barcodes"))
+if (length(kept.barcodes) < desired.barcodes) {
+	print(paste(length(kept.barcodes), "barcodes after adding back the truseq barcodes"))
 	print(paste("desired barcode number of", desired.barcodes, "was not met, moving to next iteration"))
+} else {
+	# sample down to desired barcode number
+	kept.barcodes <- sample(kept.barcodes, desired.barcodes, replace=FALSE)
+	
+	# get mean distance between barcodes
+	mean.dist <- kept.barcodes %>%
+		adist %>%
+		as.numeric %>%
+		discard(. == 0) %>%
+		mean
+	print(paste(mean.dist, "average distance between barcodes"))
+
+	# check to see if current barcodes should be saved
+	if (length(optimal.barcodes)==0) {
+		optimal.barcodes <- kept.barcodes
+		optimal.dist <- mean.dist
+	} else if (mean.dist <= optimal.dist) {
+		print(paste("the current average distance of", mean.dist, "is lower than or equal to the optimal barcode set with distance", optimal.dist))
+        } else {
+		optimal.barcodes <- kept.barcodes
+		optimal.dist <- mean.dist
+		print(paste("the current average distance of", mean.dist, "is higher than the optimal barcode set with distance", optimal.dist))
+        }
 }
-# what to do in last iteration
+
 if (iter == iter.number) {
 	# if number of desired barcodes was not met
 	if (length(optimal.barcodes) == 0) {
 		stop(paste("desired barcode number of", desired.barcodes, "could not be achieved"))
-	# if number of desierd barcodes was met
 	} else {
+	# if number of desired barcodes was met
 		print(".....exporting optimal barcode set.....")
-  		print(optimal.barcodes)
-  		#save barcodes
-  		barcodes.export <- data.frame("ID"=sprintf("bc%04d", 1:desired.barcodes))
-  		barcodes.export$barcodes <- optimal.barcodes
-  		barcodes.export$reverse.complement <- sapply(optimal.barcodes, reverse.complement)
-  		barcodes.export$adapter <- sapply(barcodes.export$reverse.complement, function(x) {paste0("CAAGCAGAAGACGGCATACGAGAT",x,"GTGACTGGAGTTCAGACGTGTGCTCTTCCGATCTNNNNN")})
-  		write.table(barcodes.export, "barcodes.txt", sep="\t", quote=F, col.names=T, row.names=F)
-		
-		bc.length.plot <- data.frame("iteration" = 1:iter.number, "bc.length" = bc.length)
-		p <- ggplot(bc.length.plot, aes(bc.length)) +
-			geom_histogram(fill="dodgerblue2", binwidth=1, color="white") +
-			theme_classic()
-  
-		pdf("barcode_info.pdf")
-		print(p)
-		dev.off()
-  		print(paste(optimal.dist, " average hamming distance for optimal barcode set"))
-  		stop(paste("desired barcode number", desired.barcodes, "met, output saved"))
+		print(optimal.barcodes)
+	
+		barcodes.export <- tibble(
+			"Barcode_ID" = sprintf("bc%04d", 1:desired.barcodes),
+			"Barcodes" = optimal.barcodes,
+			"Barcode_Reverse_Complement" = map_chr(optimal.barcodes, ~reverse.complement(.)),
+			"Adapter_Sequence" = map_chr(
+				optimal.barcodes, 
+				~ paste0(
+					"CAAGCAGAAGACGGCATACGAGAT",
+					reverse.complement(.),
+					"GTGACTGGAGTTCAGACGTGTGCTCTTCCGATCTNNNNN"
+				)
+			)
+		)
+	
+		write.table(
+			barcodes.export, "barcodes.tsv",
+			sep="\t", col.names=T, row.names=F, quote=F, na=""
+		)
+	
+		print(paste(optimal.dist, " average hamming distance for optimal barcode set"))
+		stop(paste("desired barcode number", desired.barcodes, "met, output saved"))
 	}
 }
+
 }
