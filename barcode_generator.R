@@ -220,28 +220,52 @@ print(paste(length(kept.barcodes), "after reducing the number of barcodes with m
 # remove barcodes if a base appears more than max.base.frac of the time in one position
 #####
 
+keep <- kept.barcodes
 
-for (n in 1:barcode.length) {
-	# get base at position specified in loop
-	slice <- sapply(barcodes, function(x){substr(x, n, n)})
-	# for each of the four bases, check if their percentage is too high
-	for (b in bases) {
-		# get percentage of base for the position in the loop
-		perc <- length(slice[slice == b]) / length(slice)
-		# go to next base if the percentage is below max.base.frac
-		if (perc <= max.base.frac) next
-		# keep randomly removing barcodes until percentage is under max.base.frac
-		while (perc > max.base.frac) {
-			matches <- which(slice == b)
-			to.remove <- sample(matches, 1)
-			slice <- slice[-to.remove]
-			perc <- length(slice[slice == b]) / length(slice)
-		}
-	}
-	barcodes <- barcodes[which(!is.na(slice))]
+for (n in 1:(barcode.length-2)) {
+        # pull base from current position
+        barcode.df <- keep %>%
+                as_tibble %>%
+                dplyr::rename("barcodes"=1) %>%
+                mutate("base"=substr(barcodes, n, n))
+
+        # get counts for each unique base
+        base.counts <- barcode.df %>%
+                count(base) %>%
+		dplyr::rename("count"=n) %>%
+		mutate("perc"= count / sum(count)) %>%
+                left_join(barcode.df, ., by="base") 
+        
+	# find the number that gets you close to max.base.frac
+	limits <- base.counts %>%
+		count(base, perc) %>%
+		dplyr::rename("count"=n) %>%
+		mutate(recommended = count - floor((count - (max.base.frac * sum(count))) / (1-max.base.frac))) %>%
+		left_join(base.counts, ., by=c("base", "count", "perc"))
+
+	# store barcodes where bases aren't a problem
+	already.passing <- limits %>%
+		filter(count < recommended) %>%
+		pull(barcodes)
+
+	# remove random barcodes so base fractions aren't too similar
+        make.passing <- limits %>%
+                filter(count > recommended) %>%
+		group_by(base) %>%
+		group_split %>%
+		map(
+			~ sample_n(., pull(., recommended) %>% unique) %>%
+			pull(barcodes)
+		) %>%
+		unlist
+        
+        # add filtered barcodes back to barcodes that were stashed earlier
+        keep <- c(already.passing, make.passing)
 }
 
-print(paste(length(barcodes), "barcodes after making sure a base doesn't appear more than", paste0(max.base.frac * 100, "%"), "in one position")) 
+kept.barcodes <- keep
+
+print(paste(length(kept.barcodes), "barcodes after making sure a base doesn't appear more than", paste0(max.base.frac * 100, "%"), "in one position")) 
 
 
 #####
