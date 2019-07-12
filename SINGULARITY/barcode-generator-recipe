@@ -1,0 +1,20 @@
+bootstrap: docker
+From: continuumio/miniconda3
+
+%post
+
+## Add conda to path
+export PATH=$PATH:/opt/conda/bin
+
+## Update conda
+conda update -n base -y -c defaults conda
+
+## Install RNA-seq analysis software
+conda create -n barcode-generator -y -c conda-forge -c bioconda \
+r-tidyverse r-gtools
+
+## Update rnaseq-automation environment
+conda update -n barcode-generator -y -c conda-forge -c bioconda --all
+
+## Clean up extra files
+conda clean -y --all
