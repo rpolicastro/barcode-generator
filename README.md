@@ -35,7 +35,20 @@ r-tidyverse r-gtools
 ```
 2. Update the software to the latest compatible versions.
 ```
-conda update -n chipseq-automation -y -c conda-forge -c bioconda --all
+conda update -n barcode-generator -y -c conda-forge -c bioconda --all
 ```
 
 To use the software in the environment you can type `conda activate barcode-generator`. You can deactivate the environment by closing your terminal or entering `conda deactivate`.
+
+#### Singularity Container
+
+Singularity containers are self contained 'boxes' that houses the software required to run the Barcode Generator script.
+
+# Built With
+
+This workflow would not be possible without the great software listed below.
+
+- [Anaconda](https://www.anaconda.com/) - Software package manager.
+- [R](https://www.r-project.org/) - Robust language for statistical computing.
+- [Tidyverse](https://www.tidyverse.org/) - Data manipulation in R.
+- [gtools](https://cran.r-project.org/web/packages/gtools/index.html) - R library with various conveneince functions.
