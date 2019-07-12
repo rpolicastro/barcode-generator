@@ -42,7 +42,24 @@ To use the software in the environment you can type `conda activate barcode-gene
 
 #### Singularity Container
 
-Singularity containers are self contained 'boxes' that houses the software required to run the Barcode Generator script.
+Singularity containers are self contained 'boxes' that houses the software required to run the Barcode Generator script. Before running the script you must install the Singularity software, and download the Barcode Generator container.
+
+1. Install the [latest version](https://sylabs.io/guides/3.3/user-guide/installation.html) of Singularity.
+2. Grab the Barcode Generator singularity container.
+```
+singularity pull library://rpolicastro/default/barcode_generator:1.0.0
+```
+
+To use the software within the container, you must enter the container and specify which directories you will be working in, as well as load the interncal conda environment.
+1. Shell into the container.
+```
+singularity shell \
+-e -C \
+-B path/to/repository \
+-H path/to/repository \
+path/to/container/barcode_generator_1.0.0.sif
+```
+2. Activate the internal conda environment `source activate barcode-generator`
 
 # Built With
 
