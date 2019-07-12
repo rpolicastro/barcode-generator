@@ -53,7 +53,7 @@ print(paste(length(remaining), "barcodes after removing truseq barcodes"))
 barcodes <- mutate(barcodes, "GC"= str_count(barcodes, pattern=c("G","C")) / barcode.length)
 
 discard <- barcodes %>%
-	filter(GC < 0.25 & GC > 0.75) %>%
+	filter(GC < 0.25 | GC > 0.75) %>%
 	pull(barcodes)
 
 remaining <- discard(remaining, remaining %in% discard)
@@ -106,8 +106,9 @@ remaining <- barcodes %>%
 		is.na(truseq),
 		GC >= 0.25 & GC <= 0.75,
 		is.na(single_base_runs),
-		is.na(truseq_similarity)
-	)
+		is.na(truseq_similarity),
+	) %>%
+	pull(barcodes)
 
 ########################################
 ## Maximize Barcode Number and Distance
@@ -121,9 +122,7 @@ print(paste(".....iteration number:", paste0(iter,"/",iter.number), "....."))
 
 ## jumble barcode order
 
-barcode.sample <- remaining %>%
-	pull(barcodes) %>%
-	sample
+barcode.sample <- sample(remaining, replace=FALSE)
 
 ## get barcode distances
 
@@ -270,7 +269,7 @@ for (n in 1:(barcode.length-2)) {
 
 	# store barcodes where bases aren't a problem
 	already.passing <- limits %>%
-		filter(count < recommended) %>%
+		filter(count <= recommended) %>%
 		pull(barcodes)
 
 	# remove random barcodes so base fractions aren't too similar
@@ -292,21 +291,19 @@ kept.barcodes <- keep
 
 print(paste(length(kept.barcodes), "barcodes after making sure a base doesn't appear more than", paste0(max.base.frac * 100, "%"), "in one position")) 
 
-## Add Back Truseq Barcodes
-## ----------
-
-kept.barcodes <- c(pull(truseq, barcodes), kept.barcodes)
-
 ## check if desired barcode number was found
 ## ----------
 
-if (length(kept.barcodes) < desired.barcodes) {
-	print(paste(length(kept.barcodes), "barcodes after adding back the truseq barcodes"))
+if ((length(kept.barcodes)+24) < desired.barcodes) {
+	print(paste((length(kept.barcodes)+24), "barcodes after adding back the truseq barcodes"))
 	print(paste("desired barcode number of", desired.barcodes, "was not met, moving to next iteration"))
 } else {
 	# sample down to desired barcode number
-	kept.barcodes <- sample(kept.barcodes, desired.barcodes, replace=FALSE)
+	kept.barcodes <- sample(kept.barcodes, (desired.barcodes-24), replace=FALSE)
 	
+	# add back truseq barcodes
+	kept.barcodes <- c(pull(truseq, barcodes), kept.barcodes)
+
 	# get mean distance between barcodes
 	mean.dist <- kept.barcodes %>%
 		adist %>%
