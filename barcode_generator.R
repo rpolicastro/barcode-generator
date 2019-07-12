@@ -25,26 +25,6 @@ barcodes <- permutations(4, barcode.length, bases, repeats.allowed=T) %>%
 
 print(paste(nrow(barcodes), "initial barcodes"))
 
-## Remove Truseq Adapters
-## ----------
-
-## load truseq adapters
-
-truseq <- read.delim("truseq_barcodes.tsv", header=F, sep="\t", stringsAsFactors=F) %>%
-	as_tibble %>%
-	dplyr::rename("barcodes"=1)
-
-## remove truseq adapters from barcodes
-
-barcodes <- truseq %>%
-	mutate("truseq"="Y") %>%
-	right_join(., barcodes, by="barcodes")
-
-remaining <- barcodes %>%
-	filter(is.na(truseq)) %>%
-	pull(barcodes)
-print(paste(length(remaining), "barcodes after removing truseq barcodes"))
-
 ## Filter Barcodes by GC Content
 ## ----------
 
@@ -56,7 +36,9 @@ discard <- barcodes %>%
 	filter(GC < 0.25 | GC > 0.75) %>%
 	pull(barcodes)
 
-remaining <- discard(remaining, remaining %in% discard)
+remaining <- barcodes %>%
+	pull(barcodes) %>%
+	discard(. %in% discard)
 print(paste(length(remaining), "barcodes after removing barcodes with GC content <= 25% or GC content >= 75%"))
 
 ## Filter Identical Base Runs
@@ -76,37 +58,13 @@ discard <- barcodes %>%
 remaining <- discard(remaining, remaining %in% discard)
 print(paste(length(remaining), "barcodes after removing barcodes with 4+ identical base runs")) 
 
-## Remove Barcodes Similar to Truseq
-## ----------
-
-## remove barcodes that are less than n.dist away from a truseq barcode
-
-barcodes <- adist(pull(barcodes, barcodes), pull(truseq, barcodes)) %>%
-	as_tibble %>%
-	mutate_all(~ . < n.dist) %>%
-	rowSums %>%
-	map_chr(~ifelse(.==1, "Y", NA)) %>%
-	as_tibble %>%
-	dplyr::rename("truseq_similarity"=1) %>%
-	mutate("barcodes"=pull(barcodes, barcodes)) %>%
-	left_join(barcodes, ., by="barcodes")
-
-discard <- barcodes %>%
-	filter(truseq_similarity == "Y") %>%
-	pull(barcodes)
-
-remaining <- discard(remaining, remaining %in% discard)
-print(paste(length(remaining), "barcodes after removing barcodes with a distance of", n.dist, "from truseq adapters"))
-
 ## Keep Optimal Barcodes Thus Far
 ## ----------
 
 remaining <- barcodes %>%
 	filter(
-		is.na(truseq),
 		GC >= 0.25 & GC <= 0.75,
-		is.na(single_base_runs),
-		is.na(truseq_similarity),
+		is.na(single_base_runs)
 	) %>%
 	pull(barcodes)
 
@@ -294,16 +252,12 @@ print(paste(length(kept.barcodes), "barcodes after making sure a base doesn't ap
 ## check if desired barcode number was found
 ## ----------
 
-if ((length(kept.barcodes)+24) < desired.barcodes) {
-	print(paste((length(kept.barcodes)+24), "barcodes after adding back the truseq barcodes"))
+if (length(kept.barcodes) < desired.barcodes) {
 	print(paste("desired barcode number of", desired.barcodes, "was not met, moving to next iteration"))
 } else {
 	# sample down to desired barcode number
-	kept.barcodes <- sample(kept.barcodes, (desired.barcodes-24), replace=FALSE)
+	kept.barcodes <- sample(kept.barcodes, desired.barcodes, replace=FALSE)
 	
-	# add back truseq barcodes
-	kept.barcodes <- c(pull(truseq, barcodes), kept.barcodes)
-
 	# get mean distance between barcodes
 	mean.dist <- kept.barcodes %>%
 		adist %>%
@@ -335,7 +289,7 @@ if (iter == iter.number) {
 		print(optimal.barcodes)
 	
 		barcodes.export <- tibble(
-			"Barcode_ID" = sprintf("bc%04d", 1:desired.barcodes),
+			"Barcode_ID" = sprintf("BC%04d", 1:desired.barcodes),
 			"Barcodes" = optimal.barcodes,
 			"Barcode_Reverse_Complement" = map_chr(optimal.barcodes, ~reverse.complement(.)),
 			"Adapter_Sequence" = map_chr(
